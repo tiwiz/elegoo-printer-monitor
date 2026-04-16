@@ -1,9 +1,0 @@
-menu "Printer Monitor Configuration"
-
-    config DISPLAY_BRIGHTNESS
-        int "Display Brightness (0-100)"
-        default 80
-        help
-            Default display brightness percentage
-
-endmenu

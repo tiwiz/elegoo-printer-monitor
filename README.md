@@ -1,24 +1,22 @@
 # ESP32 Printer Monitor
 
-A companion display for Elegoo 3D printers using ESP32-C3 and LVGL. Features a BuddyLab-style UI with animated expressions on a round display.
+A companion display for Elegoo 3D printers using the ESP32-Cheap-Yellow-Display (CYD). Features a BuddyLab-style UI with animated expressions.
 
 ## Hardware
 
-- ESP32-C3 Super Mini
-- 1.28" Round TFT GC9A01
+**ESP32-Cheap-Yellow-Display (CYD)**
+- ESP32 (WiFi + Bluetooth)
+- 320 x 240 2.8" LCD Display
+- Resistive Touch Screen
+- USB-C for power/programming
+- SD Card Slot
+- RGB LED
+
+More info: [ESP32-Cheap-Yellow-Display](https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display) by @witnessmenow
 
 ## Wiring
 
-| GC9A01 | ESP32-C3 |
-|--------|----------|
-| SCL    | GPIO6    |
-| SDA    | GPIO7    |
-| CS     | GPIO10   |
-| DC     | GPIO4    |
-| RES    | GPIO5    |
-| BL     | GPIO8    |
-| VCC    | 3.3V     |
-| GND    | GND      |
+No wiring required - all components are built into the CYD!
 
 ## Instructions
 
@@ -44,15 +42,32 @@ A companion display for Elegoo 3D printers using ESP32-C3 and LVGL. Features a B
 
 6. **Device restarts** - The device will save your settings and restart in normal mode, connecting to your WiFi network and printer.
 
-### Supported Printers
+### Building the Firmware
 
-- Elegoo Neptune 4
-- Elegoo Neptune 4 Pro
-- Elegoo Neptune 4 Max
-- Elegoo Centauri Carbon
-- Elegoo Centauri Carbon 2
-- Elegoo OrangeStorm Giga
-- Generic (Moonraker protocol)
+**Requirements:**
+- [PlatformIO](https://platformio.org/) (or use VS Code with PlatformIO extension)
+
+**Build and Upload:**
+
+```bash
+# Clone the repository
+git clone <your-repo-url>
+cd esp32-printer-monitor
+
+# Install dependencies and build
+pio run
+
+# Upload to device (connect via USB)
+pio run --target upload
+
+# View serial output
+pio device monitor
+```
+
+**Or with VS Code:**
+1. Install PlatformIO extension
+2. Open the project folder
+3. Click "Upload" in the bottom toolbar
 
 ### Finding Your Printer's IP Address
 
@@ -63,30 +78,31 @@ A companion display for Elegoo 3D printers using ESP32-C3 and LVGL. Features a B
 
 To reset and reconfigure the device:
 
-1. Press and hold the reset button for 10 seconds
-2. The device will erase saved settings and restart in AP mode
+1. Press and hold the BOOT button while powering on the device
+2. The device will enter configuration mode
 3. Follow the First-Time Setup steps again
 
-### Building the Firmware
+## Supported Printers
 
-```bash
-cd esp32-printer-monitor
-idf.py set-target esp32c3
-idf.py menuconfig
-idf.py build
-idf.py flash
-idf.py monitor
-```
+Based on the Elegoo Link protocol:
+- Elegoo Neptune 4
+- Elegoo Neptune 4 Pro
+- Elegoo Neptune 4 Max
+- Elegoo Centauri Carbon
+- Elegoo Centauri Carbon 2
+- Elegoo OrangeStorm Giga
+- Generic (Moonraker protocol)
 
 ## Features
 
-- Round display with animated face expressions
+- 2.8" LCD display with animated face expressions
 - Progress arc showing print completion
 - Bed and nozzle temperature display
 - Estimated time remaining
 - WiFi status indicator
 - Access point configuration portal (open network)
 - Settings stored in NVS flash
+- Touch screen ready for future UI interactions
 
 ## UI States
 
@@ -94,13 +110,34 @@ idf.py monitor
 |---------------|---------|
 | Idle | Neutral face, "IDLE" |
 | Printing | Working face, progress % |
-| Preheating | Neutral face, "HEAT" |
-| Exception | Error face, "ERR" |
-| Connected | Green WiFi indicator |
-| Disconnected | Gray WiFi indicator |
+| Preheating | Working face, "HEAT" |
+| Error | Error face, "ERR" |
+| Offline | Gray face, "Offline" |
 
 ## Protocol
 
-Uses the Elegoo Link protocol for communication:
-- HTTP for status queries
-- WebSocket for real-time updates
+Uses the Elegoo Link protocol for communication via HTTP:
+- Status queries to `/api/v1/printer`
+- JSON response parsing
+
+## Display Configuration
+
+The CYD uses the following pins (built-in):
+
+| Feature | Pin |
+|---------|-----|
+| TFT DC | GPIO 2 |
+| TFT MISO | GPIO 12 |
+| TFT MOSI | GPIO 13 |
+| TFT SCK | GPIO 14 |
+| TFT CS | GPIO 15 |
+| TFT Backlight | GPIO 21 |
+| Touch CLK | GPIO 25 |
+| Touch MOSI | GPIO 32 |
+| Touch CS | GPIO 33 |
+| Touch IRQ | GPIO 36 |
+| Touch MISO | GPIO 39 |
+
+## License
+
+MIT License

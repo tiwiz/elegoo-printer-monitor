@@ -1,21 +1,17 @@
-# ESP-IDF build output
-build/
-sdkconfig
-sdkconfig.old
+# PlatformIO
+.pio/
+.vscode/.browse/
+.vscode/c_cpp_properties*
+.vscode/launch*
+.vscode/*.ini
 *.pyc
 __pycache__/
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Python
-venv/
-env/
-.pio/
+# Build output
+*.bin
+*.elf
+*.map
+*.hex
 
 # Logs
 *.log
@@ -24,5 +20,10 @@ env/
 .DS_Store
 Thumbs.db
 
-# Git (but not the repo)
+# Python
+venv/
+env/
+.pio/
+
+# Git
 *.orig
