@@ -60,6 +60,7 @@ struct PrinterStatus {
     float nozzle_target = 0;
     String file_name;
     int estimated_time = 0;
+    int print_duration = 0;
 };
 
 Config config;
@@ -247,48 +248,55 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 </html>
 )rawliteral";
 
-void drawFace(int centerX, int centerY, int scale, uint32_t eyeColor, uint32_t mouthColor, int mouthType) {
-    tft.fillCircle(centerX - 30 * scale, centerY - 20 * scale, 15 * scale, eyeColor);
-    tft.fillCircle(centerX + 30 * scale, centerY - 20 * scale, 15 * scale, eyeColor);
-
-    switch (mouthType) {
-        case 1:
-            tft.fillCircle(centerX, centerY + 25 * scale, 25 * scale, mouthColor);
-            break;
-        case 2:
-            tft.fillRoundRect(centerX - 20 * scale, centerY + 15 * scale, 40 * scale, 12 * scale, 6 * scale, mouthColor);
-            break;
-        case 3:
-            tft.fillRoundRect(centerX - 25 * scale, centerY + 15 * scale, 50 * scale, 15 * scale, 4 * scale, mouthColor);
-            break;
-        default:
-            tft.fillRoundRect(centerX - 20 * scale, centerY + 20 * scale, 40 * scale, 6 * scale, 3 * scale, mouthColor);
-            break;
-    }
+// ==========================================
+// EMOJI HELPERS
+// ==========================================
+void drawBaseEyes(int cx, int cy, int scale) {
+    tft.fillCircle(cx - 30 * scale, cy - 20 * scale, 15 * scale, TFT_WHITE);
+    tft.fillCircle(cx + 30 * scale, cy - 20 * scale, 15 * scale, TFT_WHITE);
 }
 
-void drawProgressArc(int centerX, int centerY, int radius, int thickness, int progress, uint32_t bgColor, uint32_t fgColor) {
-    tft.drawArc(centerX, centerY, radius, radius - thickness, 135, 270, bgColor, bgColor, true);
-    int angle = (progress * 270) / 100;
-    if (angle > 0) {
-        tft.drawArc(centerX, centerY, radius, radius - thickness, 135, 135 + angle, fgColor, bgColor, true);
-    }
+void drawSadFace(int cx, int cy, int scale) {
+    drawBaseEyes(cx, cy, scale);
+    tft.fillRoundRect(cx - 20 * scale, cy + 15 * scale, 40 * scale, 6 * scale, 3 * scale, TFT_DARKGREY);
 }
 
+void drawHappyFace(int cx, int cy, int scale) {
+    drawBaseEyes(cx, cy, scale);
+    tft.drawArc(cx, cy - 10 * scale, 40 * scale, 32 * scale, 135, 225, TFT_GREEN, TFT_BLACK, true);
+}
+
+void drawCryingFace(int cx, int cy, int scale) {
+    drawBaseEyes(cx, cy, scale);
+    // Tears
+    tft.fillTriangle(cx - 30 * scale, cy + 5 * scale, cx - 36 * scale, cy + 18 * scale, cx - 24 * scale, cy + 18 * scale, TFT_CYAN);
+    tft.fillCircle(cx - 30 * scale, cy + 18 * scale, 6 * scale, TFT_CYAN);
+    
+    tft.fillTriangle(cx + 30 * scale, cy + 5 * scale, cx + 36 * scale, cy + 18 * scale, cx + 24 * scale, cy + 18 * scale, TFT_CYAN);
+    tft.fillCircle(cx + 30 * scale, cy + 18 * scale, 6 * scale, TFT_CYAN);
+    
+    // Sad mouth
+    tft.drawArc(cx, cy + 40 * scale, 30 * scale, 22 * scale, 310, 410, TFT_RED, TFT_BLACK, true);
+}
+
+// ==========================================
+// [ SETUP / CONNECTING SCREENS ]
+// ==========================================
 void drawConfigScreen() {
     tft.fillScreen(TFT_BLACK);
     tft.setTextColor(TFT_WHITE);
     tft.setTextSize(2);
     tft.drawCentreString("Setup Required", 160, 20, 1);
 
-    drawFace(160, 100, 1, TFT_WHITE, TFT_DARKGREY, 0);
+    drawBaseEyes(160, 90, 1);
+    tft.fillRect(140, 110, 40, 6, TFT_DARKGREY);
 
     tft.setTextSize(1);
     tft.setTextColor(TFT_LIGHTGREY);
-    tft.drawCentreString("Connect to WiFi", 160, 170, 1);
-    tft.drawCentreString("\"ElegooMonitor\"", 160, 185, 1);
-    tft.drawCentreString("Then open browser", 160, 200, 1);
-    tft.drawCentreString("to http://192.168.4.1", 160, 215, 1);
+    tft.drawCentreString("Connect to WiFi", 160, 150, 1);
+    tft.drawCentreString("\"ElegooMonitor\"", 160, 165, 1);
+    tft.drawCentreString("Then open browser", 160, 180, 1);
+    tft.drawCentreString("to http://192.168.4.1", 160, 195, 1);
 }
 
 void drawConnectingScreen(const String& line1, const String& line2) {
@@ -302,76 +310,130 @@ void drawConnectingScreen(const String& line1, const String& line2) {
     }
 }
 
-void drawMonitorScreen() {
+// ==========================================
+// [ STATE: OFFLINE ]
+// ==========================================
+void drawStateOffline() {
     tft.fillScreen(TFT_BLACK);
-
-    uint32_t mouthColor = TFT_DARKGREY;
-    int mouthType = 0;
-
-    switch (printerStatus.state) {
-        case STATE_PRINTING:
-            mouthColor = TFT_ORANGE;
-            mouthType = 2;
-            break;
-        case STATE_PREHEATING:
-            mouthColor = TFT_YELLOW;
-            mouthType = 2;
-            break;
-        case STATE_ERROR:
-            mouthColor = TFT_RED;
-            mouthType = 3;
-            break;
-        case STATE_IDLE:
-        default:
-            mouthColor = TFT_DARKGREY;
-            mouthType = 0;
-            break;
-    }
-
-    drawFace(160, 80, 1, TFT_WHITE, mouthColor, mouthType);
-    drawProgressArc(160, 80, 55, 8, printerStatus.progress, 0x2d2d44, TFT_BLUE);
-
+    drawSadFace(160, 80, 2);
     tft.setTextSize(3);
-    tft.setTextColor(TFT_WHITE);
-    if (printerStatus.state == STATE_PREHEATING) {
-        tft.drawCentreString("HEAT", 160, 155, 1);
-    } else if (printerStatus.state == STATE_IDLE) {
-        tft.drawCentreString("IDLE", 160, 155, 1);
-    } else if (printerStatus.state == STATE_ERROR) {
-        tft.drawCentreString("ERR", 160, 155, 1);
-    } else {
-        tft.drawCentreString(String(printerStatus.progress) + "%", 160, 155, 1);
-    }
+    tft.setTextColor(TFT_DARKGREY);
+    tft.drawCentreString("Printer is", 160, 160, 1);
+    tft.drawCentreString("offline", 160, 195, 1);
+}
 
-    tft.setTextSize(1);
-    tft.setTextColor(TFT_LIGHTGREY);
-    String statusStr;
-    switch (printerStatus.state) {
-        case STATE_PRINTING: statusStr = printerStatus.file_name.length() > 0 ? printerStatus.file_name : "Printing"; break;
-        case STATE_PREHEATING: statusStr = "Preheating..."; break;
-        case STATE_ERROR: statusStr = "Error"; break;
-        case STATE_IDLE: statusStr = "Ready"; break;
-        default: statusStr = "Offline";
-    }
-    tft.drawCentreString(statusStr, 160, 10, 1);
-
-    tft.fillRoundRect(50, 195, 220, 35, 8, 0x1a1a2e);
+// ==========================================
+// [ STATE: IDLE ]
+// ==========================================
+void drawStateIdle() {
+    tft.fillScreen(TFT_BLACK);
+    drawHappyFace(160, 80, 1);
+    
+    bool showFahrenheit = (millis() / 5000) % 2 == 1;
     tft.setTextSize(2);
     tft.setTextColor(TFT_WHITE);
-    tft.drawString("BED: " + String((int)printerStatus.bed_temp) + "/" + String((int)printerStatus.bed_target) + "C", 60, 205, 1);
-    tft.drawRightString("NOZ: " + String((int)printerStatus.nozzle_temp) + "/" + String((int)printerStatus.nozzle_target) + "C", 260, 205, 1);
-
-    tft.setTextSize(1);
-    tft.setTextColor(TFT_GREY);
-    if (printerStatus.estimated_time > 0) {
-        int remaining = printerStatus.estimated_time;
-        int hours = remaining / 3600;
-        int mins = (remaining % 3600) / 60;
-        char buf[16];
-        snprintf(buf, sizeof(buf), "ETA: %d:%02d", hours, mins);
-        tft.drawCentreString(buf, 160, 175, 1);
+    
+    tft.fillRoundRect(30, 150, 260, 60, 10, 0x1a1a2e);
+    
+    if (showFahrenheit) {
+        int bTempF = (int)(printerStatus.bed_temp * 9/5 + 32);
+        int bTargF = (int)(printerStatus.bed_target * 9/5 + 32);
+        int nTempF = (int)(printerStatus.nozzle_temp * 9/5 + 32);
+        int nTargF = (int)(printerStatus.nozzle_target * 9/5 + 32);
+        tft.drawString("BED: " + String(bTempF) + "/" + String(bTargF) + "F", 45, 170, 1);
+        tft.drawRightString("NOZ: " + String(nTempF) + "/" + String(nTargF) + "F", 275, 170, 1);
     } else {
-        tft.drawCentreString("ETA: --:--", 160, 175, 1);
+        tft.drawString("BED: " + String((int)printerStatus.bed_temp) + "/" + String((int)printerStatus.bed_target) + "C", 45, 170, 1);
+        tft.drawRightString("NOZ: " + String((int)printerStatus.nozzle_temp) + "/" + String((int)printerStatus.nozzle_target) + "C", 275, 170, 1);
+    }
+}
+
+// ==========================================
+// [ STATE: PRINTING ]
+// ==========================================
+void drawStatePrinting() {
+    tft.fillScreen(TFT_BLACK);
+    
+    // Header
+    tft.setTextSize(2);
+    tft.setTextColor(TFT_ORANGE);
+    String title = printerStatus.file_name.length() > 0 ? printerStatus.file_name : "Printing...";
+    tft.drawCentreString(title, 160, 15, 1);
+    
+    // Grid Layout for Stats
+    tft.fillRoundRect(10, 60, 145, 80, 8, 0x1a1a2e);
+    tft.fillRoundRect(165, 60, 145, 80, 8, 0x1a1a2e);
+    
+    tft.setTextSize(1);
+    tft.setTextColor(TFT_LIGHTGREY);
+    tft.drawCentreString("ELAPSED", 82, 75, 1);
+    tft.drawCentreString("ETA", 237, 75, 1);
+    
+    tft.setTextSize(3);
+    tft.setTextColor(TFT_WHITE);
+    // Format elapsed
+    int e_hours = printerStatus.print_duration / 3600;
+    int e_mins = (printerStatus.print_duration % 3600) / 60;
+    char e_buf[16];
+    snprintf(e_buf, sizeof(e_buf), "%d:%02d", e_hours, e_mins);
+    tft.drawCentreString(e_buf, 82, 100, 1);
+    
+    // Format ETA
+    int eta_hours = printerStatus.estimated_time / 3600;
+    int eta_mins = (printerStatus.estimated_time % 3600) / 60;
+    char eta_buf[16];
+    if (printerStatus.estimated_time > 0) {
+        snprintf(eta_buf, sizeof(eta_buf), "%d:%02d", eta_hours, eta_mins);
+    } else {
+        snprintf(eta_buf, sizeof(eta_buf), "--:--");
+    }
+    tft.drawCentreString(eta_buf, 237, 100, 1);
+    
+    // Percentage & Progress Bar
+    tft.setTextSize(2);
+    tft.setTextColor(TFT_GREEN);
+    tft.drawCentreString(String(printerStatus.progress) + "%", 160, 165, 1);
+    
+    int barW = 280;
+    int barH = 20;
+    int barX = 20;
+    int barY = 195;
+    tft.drawRect(barX, barY, barW, barH, TFT_DARKGREY);
+    if (printerStatus.progress > 0) {
+        int fillW = (printerStatus.progress * (barW - 4)) / 100;
+        tft.fillRect(barX + 2, barY + 2, fillW, barH - 4, TFT_BLUE);
+    }
+}
+
+// ==========================================
+// [ STATE: ERROR ]
+// ==========================================
+void drawStateError() {
+    tft.fillScreen(TFT_BLACK);
+    drawCryingFace(160, 80, 2);
+    tft.setTextSize(3);
+    tft.setTextColor(TFT_RED);
+    tft.drawCentreString("Check the printer!", 160, 180, 1);
+}
+
+// ==========================================
+// STATE DISPATCHER
+// ==========================================
+void drawCurrentState() {
+    switch (printerStatus.state) {
+        case STATE_OFFLINE:
+            drawStateOffline();
+            break;
+        case STATE_IDLE:
+        case STATE_PREHEATING:
+            drawStateIdle();
+            break;
+        case STATE_PRINTING:
+            drawStatePrinting();
+            break;
+        case STATE_ERROR:
+            drawStateError();
+            break;
     }
 }
 
@@ -457,7 +519,7 @@ void handleSave() {
     }
 
     String body = server.arg("plain");
-    DynamicJsonDocument doc(1024);
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, body);
     if (error) {
         server.send(400, "text/plain", "JSON Error");
@@ -518,12 +580,12 @@ void fetchPrinterStatus() {
         String payload = http.getString();
         printerConnected = true;
 
-        DynamicJsonDocument doc(4096);
+        JsonDocument doc;
         DeserializationError error = deserializeJson(doc, payload);
 
         if (!error) {
             JsonObject status = doc["status"];
-            if (status.containsKey("state")) {
+            if (status["state"].is<const char*>()) {
                 const char* state = status["state"];
                 if (strcmp(state, "printing") == 0) {
                     printerStatus.state = STATE_PRINTING;
@@ -538,16 +600,19 @@ void fetchPrinterStatus() {
                 }
             }
 
-            if (status.containsKey("progress")) {
+            if (status["progress"].is<int>()) {
                 printerStatus.progress = status["progress"];
             }
 
             JsonObject print = doc["print"];
-            if (print.containsKey("file_name")) {
+            if (print["file_name"].is<const char*>()) {
                 printerStatus.file_name = print["file_name"].as<String>();
             }
-            if (print.containsKey("estimated_time")) {
+            if (print["estimated_time"].is<int>()) {
                 printerStatus.estimated_time = print["estimated_time"];
+            }
+            if (print["print_duration"].is<int>()) {
+                printerStatus.print_duration = print["print_duration"];
             }
 
             JsonObject temp = doc["temperature"];
@@ -573,10 +638,23 @@ void fetchPrinterStatus() {
 void setup() {
     Serial.begin(115200);
 
+    // CYD Hardware Fixes (derived from GymTimer.ino)
+    // 1. Turn off the annoying rear RGB LED (Blue) which is active low on pin 17
+    pinMode(17, OUTPUT);
+    digitalWrite(17, HIGH);
+    
+    ledcSetup(0, 4000, 8);
+    ledcAttachPin(1, 0);
+    ledcWrite(0, 0); 
+
+    // 3. Explicitly power backlight on pin 21
+    pinMode(21, OUTPUT);
+    digitalWrite(21, HIGH);
+
     nvs_flash_init();
 
     tft.init();
-    tft.setRotation(0);
+    tft.setRotation(1);
     tft.fillScreen(TFT_BLACK);
     tft.setTextColor(TFT_WHITE);
     tft.setTextSize(2);
@@ -624,13 +702,13 @@ void setup() {
 
 void loop() {
     if (currentState == UI_CONFIG) {
-        dnsServer.processNextClient();
+        dnsServer.processNextRequest();
         server.handleClient();
     } else if (currentState == UI_MONITOR) {
         if (millis() - lastStatusUpdate > 2000) {
             lastStatusUpdate = millis();
             fetchPrinterStatus();
-            drawMonitorScreen();
+            drawCurrentState();
         }
     }
 
