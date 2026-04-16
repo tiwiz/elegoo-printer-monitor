@@ -6,6 +6,7 @@
 #include <nvs_flash.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include <WiFiUdp.h>
 
 #define AP_SSID "ElegooMonitor"
 #define AP_IP 192, 168, 4, 1
@@ -169,7 +170,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                 <option value="generic">Generic (Moonraker)</option>
             </select>
             <label for="printerHost">Printer IP Address</label>
-            <input type="text" id="printerHost" placeholder="192.168.1.100">
+            <input type="text" id="printerHost" placeholder="192.168.1.100 (Optional - Auto Discovery)">
             <label for="printerPort">Printer Port</label>
             <input type="number" id="printerPort" placeholder="8888" value="8888" min="1" max="65535">
         </div>
@@ -220,7 +221,6 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             const printerPort = parseInt(document.getElementById('printerPort').value) || 8888;
 
             if (!ssid) { showMessage('Please enter or select a network', 'error'); return; }
-            if (!printerHost) { showMessage('Please enter printer IP address', 'error'); return; }
 
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner"></span>Saving...';
@@ -567,6 +567,71 @@ void connectWiFi() {
     wifiConnected = (WiFi.status() == WL_CONNECTED);
 }
 
+bool autoDiscoverPrinter() {
+    drawConnectingScreen("Scanning for Printer...", "Via UDP Broadcast");
+    WiFiUDP udp;
+    udp.begin(0);
+    IPAddress broadcastIp(255, 255, 255, 255);
+    const char* payload = "M99999";
+    
+    unsigned long startTime = millis();
+    unsigned long lastBroadcast = 0;
+    while (millis() - startTime < 8000) { // 8 second timeout
+        if (millis() - lastBroadcast > 2000) {
+            lastBroadcast = millis();
+            udp.beginPacket(broadcastIp, 3000);
+            udp.write((const uint8_t*)payload, strlen(payload));
+            udp.endPacket();
+            
+            udp.beginPacket(broadcastIp, 52700);
+            udp.write((const uint8_t*)payload, strlen(payload));
+            udp.endPacket();
+        }
+        
+        int packetSize = udp.parsePacket();
+        if (packetSize) {
+            char buf[512];
+            int len = udp.read(buf, 511);
+            if (len > 0) {
+                buf[len] = 0;
+                JsonDocument doc;
+                DeserializationError error = deserializeJson(doc, buf);
+                if (!error && doc["Id"].is<const char*>() && doc.containsKey("Data")) {
+                    config.printer_host = udp.remoteIP().toString();
+                    
+                    String name = "Printer";
+                    if (doc["Data"]["Name"].is<const char*>()) {
+                        name = doc["Data"]["Name"].as<String>();
+                    }
+                    drawConnectingScreen("Printer Discovered!", name);
+                    delay(1000);
+
+                    drawConnectingScreen("Probing Port...", "Checking 8888 / 7125");
+                    WiFiClient client;
+                    if (client.connect(config.printer_host.c_str(), 8888, 2000)) {
+                        config.printer_port = 8888;
+                        client.stop();
+                    } else if (client.connect(config.printer_host.c_str(), 7125, 2000)) {
+                        config.printer_port = 7125;
+                        client.stop();
+                    } else {
+                        // Fallback to 8888 if both somehow fail
+                        config.printer_port = 8888;
+                    }
+
+                    saveConfigToNVS(config);
+                    
+                    drawConnectingScreen("Port Configured:", String(config.printer_port));
+                    delay(1500);
+                    return true;
+                }
+            }
+        }
+        delay(10);
+    }
+    return false;
+}
+
 void fetchPrinterStatus() {
     HTTPClient http;
     String url = "http://" + config.printer_host + ":" + String(config.printer_port) + "/api/v1/printer";
@@ -671,19 +736,28 @@ void setup() {
             drawConnectingScreen("WiFi Connected", WiFi.localIP().toString());
             delay(500);
 
-            drawConnectingScreen("Connecting to Printer...", config.printer_host);
+            if (config.printer_host == "") {
+                if (!autoDiscoverPrinter()) {
+                    drawConnectingScreen("Discovery Failed", "Check printer / LAN");
+                    delay(3000);
+                    config.configured = false;
+                }
+            }
 
-            fetchPrinterStatus();
-            if (printerConnected) {
-                currentState = UI_MONITOR;
-            } else {
-                tft.fillScreen(TFT_BLACK);
-                tft.setTextColor(TFT_ORANGE);
-                tft.drawCentreString("Printer Offline", 160, 100, 1);
-                tft.setTextColor(TFT_LIGHTGREY);
-                tft.drawCentreString("Will retry...", 160, 130, 1);
-                delay(2000);
-                currentState = UI_MONITOR;
+            if (config.printer_host != "") {
+                drawConnectingScreen("Connecting to Printer...", config.printer_host);
+                fetchPrinterStatus();
+                if (printerConnected) {
+                    currentState = UI_MONITOR;
+                } else {
+                    tft.fillScreen(TFT_BLACK);
+                    tft.setTextColor(TFT_ORANGE);
+                    tft.drawCentreString("Printer Offline", 160, 100, 1);
+                    tft.setTextColor(TFT_LIGHTGREY);
+                    tft.drawCentreString("Will retry...", 160, 130, 1);
+                    delay(2000);
+                    currentState = UI_MONITOR;
+                }
             }
         } else {
             drawConnectingScreen("WiFi Failed", "Check credentials");
