@@ -973,24 +973,7 @@ void setup() {
             if (config.printer_host != "") {
                 drawConnectingScreen("Connecting to SDCP...", config.printer_host);
                 connectSDCP();
-                
-                unsigned long connectStart = millis();
-                while (!sdcpConnected && (millis() - connectStart < SDCP_CONNECTION_TIMEOUT)) {
-                    sdcpClient.loop();
-                    delay(50);
-                }
-                
-                if (sdcpConnected) {
-                    currentState = UI_MONITOR;
-                } else {
-                    tft.fillScreen(TFT_BLACK);
-                    tft.setTextColor(TFT_ORANGE);
-                    tft.drawCentreString("Connection Failed", 160, 100, 1);
-                    tft.setTextColor(TFT_LIGHTGREY);
-                    tft.drawCentreString("Will retry in monitor mode...", 160, 130, 1);
-                    delay(2000);
-                    currentState = UI_MONITOR;
-                }
+                currentState = UI_MONITOR;
             }
         } else {
             drawConnectingScreen("WiFi Failed", "Check credentials");
