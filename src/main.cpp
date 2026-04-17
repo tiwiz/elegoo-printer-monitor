@@ -104,6 +104,7 @@ bool wifiConnected = false;
 bool printerConnected = false;
 unsigned long lastStatusUpdate = 0;
 unsigned long lastKeepalive = 0;
+unsigned long lastUIDraw = 0;
 int reconnectAttempts = 0;
 
 WebSocketsClient sdcpClient;
@@ -690,13 +691,13 @@ bool autoDiscoverPrinter() {
 String generateUUID() {
     uuid.seed(micros());
     uuid.generate();
-    return uuid.toCharString();
+    return uuid.toCharArray();
 }
 
 void sendSDCPCommand(int cmd, JsonObject data = JsonObject()) {
     if (!sdcpConnected || config.printer_host.length() == 0) return;
     
-    StaticJsonDocument<512> doc;
+    JsonDocument doc;
     JsonObject msgData = doc["Data"].to<JsonObject>();
     
     msgData["Cmd"] = cmd;
@@ -799,7 +800,7 @@ void parseSDCPStatus(const JsonObject& status) {
 }
 
 void parseSDCPResponse(const String& payload) {
-    StaticJsonDocument<1024> doc;
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, payload);
     
     if (error) {
@@ -931,10 +932,12 @@ void setup() {
     pinMode(17, OUTPUT);
     digitalWrite(17, HIGH);
     
+    // CYD Hardware Fixes
     ledcSetup(0, 4000, 8);
     ledcAttachPin(1, 0);
     ledcWrite(0, 0);
 
+    // Explicitly power backlight on pin 21
     pinMode(21, OUTPUT);
     digitalWrite(21, HIGH);
 
@@ -1011,8 +1014,8 @@ void loop() {
     } else if (currentState == UI_MONITOR) {
         sdcpLoop();
         
-        if (millis() - lastStatusUpdate > 100) {
-            lastStatusUpdate = millis();
+        if (millis() - lastUIDraw > 1000) {
+            lastUIDraw = millis();
             drawCurrentState();
         }
     }
