@@ -39,8 +39,8 @@ DNSServer dnsServer;
 UUID uuid;
 
 // --- MOCK SETTINGS ---
-const bool MOCK_UI_MODE = true;
-const int MOCK_CURRENT_STATE = 0; // 0 = STATE_IDLE
+const bool MOCK_UI_MODE = false;
+const int MOCK_CURRENT_STATE = 3; // 3 = STATE_ERROR
 
 // --- MD3 COLORS (RGB565) ---
 #define MD3_BG 0x1042         // #121212
@@ -309,7 +309,8 @@ void drawBaseEyes(int cx, int cy, int scale) {
 
 void drawSadFace(int cx, int cy, int scale) {
     drawBaseEyes(cx, cy, scale);
-    tft.fillRoundRect(cx - 20 * scale, cy + 15 * scale, 40 * scale, 6 * scale, 3 * scale, TFT_DARKGREY);
+    // Sad mouth arc
+    tft.drawArc(cx, cy + 25 * scale, 20 * scale, 15 * scale, 135, 225, MD3_TEXT_SEC, MD3_BG, true);
 }
 
 void drawHappyFace(int cx, int cy, int scale) {
@@ -321,18 +322,17 @@ void drawHappyFace(int cx, int cy, int scale) {
 
 void drawCryingFace(int cx, int cy, int scale) {
     drawBaseEyes(cx, cy, scale);
-    tft.fillTriangle(cx - 30 * scale, cy + 5 * scale, cx - 36 * scale, cy + 18 * scale, cx - 24 * scale, cy + 18 * scale, TFT_CYAN);
-    tft.fillCircle(cx - 30 * scale, cy + 18 * scale, 6 * scale, TFT_CYAN);
-    tft.fillTriangle(cx + 30 * scale, cy + 5 * scale, cx + 36 * scale, cy + 18 * scale, cx + 24 * scale, cy + 18 * scale, TFT_CYAN);
-    tft.fillCircle(cx + 30 * scale, cy + 18 * scale, 6 * scale, TFT_CYAN);
-    tft.drawArc(cx, cy + 40 * scale, 30 * scale, 22 * scale, 310, 410, TFT_RED, TFT_BLACK, true);
+    // Tears
+    tft.fillCircle(cx - 30 * scale, cy + 8 * scale, 4 * scale, 0x55BF); // Soft Blue
+    tft.fillCircle(cx + 30 * scale, cy + 8 * scale, 4 * scale, 0x55BF);
+    // Sad mouth arc
+    tft.drawArc(cx, cy + 35 * scale, 25 * scale, 18 * scale, 120, 240, 0xF248, MD3_BG, true); // MD3 Error Red-ish
 }
 
 void drawThinkingFace(int cx, int cy, int scale) {
     drawBaseEyes(cx, cy, scale);
-    tft.fillCircle(cx - 35 * scale, cy - 10 * scale, 8 * scale, TFT_LIGHTGREY);
-    tft.fillCircle(cx + 35 * scale, cy - 10 * scale, 8 * scale, TFT_LIGHTGREY);
-    tft.fillRoundRect(cx - 15 * scale, cy + 15 * scale, 30 * scale, 6 * scale, 3 * scale, TFT_DARKGREY);
+    // Mouth: a flat line or small round ellipse to look "thinking"
+    tft.fillRoundRect(cx - 15 * scale, cy + 15 * scale, 30 * scale, 6 * scale, 3 * scale, MD3_TEXT_SEC);
 }
 
 void drawConfigScreen() {
@@ -363,23 +363,24 @@ void drawConnectingScreen(const String& line1, const String& line2) {
 }
 
 void drawStateOffline() {
-    tft.fillScreen(TFT_BLACK);
-    drawSadFace(160, 80, 2);
-    tft.setTextSize(3);
-    tft.setTextColor(TFT_DARKGREY);
+    tft.fillScreen(MD3_BG);
+    drawSadFace(160, 80, 1.5);
+    tft.setTextSize(2);
+    tft.setTextColor(MD3_TEXT_SEC);
     tft.drawCentreString("Printer is", 160, 160, 1);
-    tft.drawCentreString("offline", 160, 195, 1);
+    tft.setTextColor(MD3_TEXT);
+    tft.drawCentreString("offline", 160, 185, 1);
 }
 
 void drawStateConnecting() {
-    tft.fillScreen(TFT_BLACK);
-    drawThinkingFace(160, 80, 1);
+    tft.fillScreen(MD3_BG);
+    drawThinkingFace(160, 80, 1.5);
     tft.setTextSize(2);
-    tft.setTextColor(TFT_WHITE);
+    tft.setTextColor(MD3_TEXT);
     tft.drawCentreString("Connecting...", 160, 160, 1);
     if (config.printer_host.length() > 0) {
         tft.setTextSize(1);
-        tft.setTextColor(TFT_LIGHTGREY);
+        tft.setTextColor(MD3_TEXT_SEC);
         tft.drawCentreString(config.printer_host, 160, 185, 1);
     }
 }
@@ -428,76 +429,127 @@ void drawStateIdle(bool fullRedraw) {
     }
 }
 
+static int lastProgress = -1;
+static unsigned long lastPrintDuration = 0xFFFFFFFF;
+
 void drawStatePrinting(bool fullRedraw) {
     if (fullRedraw) {
-        tft.fillScreen(TFT_BLACK);
-        tft.setTextSize(2);
-        tft.setTextColor(TFT_ORANGE);
-        String title = printerStatus.file_name.length() > 0 ? printerStatus.file_name : "Printing...";
-        if (title.length() > 18) {
-            title = title.substring(0, 15) + "...";
-        }
-        tft.drawCentreString(title, 160, 15, 1);
-        tft.fillRoundRect(10, 60, 145, 80, 8, 0x1a1a2e);
-        tft.fillRoundRect(165, 60, 145, 80, 8, 0x1a1a2e);
+        tft.fillScreen(MD3_BG);
+        drawHappyFace(160, 80, 1);
+        
+        // Progress bar background (Pill shape)
+        int barX = 20, barY = 150, barW = 280, barH = 24;
+        tft.fillRoundRect(barX, barY, barW, barH, barH/2, MD3_CARD);
+        
+        // Bottom info card
+        tft.fillRoundRect(20, 185, 280, 45, 12, MD3_CARD);
+        
+        lastProgress = -1;
+        lastPrintDuration = 0xFFFFFFFF;
+    }
+
+    // Update progress bar
+    if (printerStatus.progress != lastProgress) {
+        int barX = 20, barY = 150, barW = 280, barH = 24;
+        int fillW = (printerStatus.progress * barW) / 100;
+        if (fillW < barH) fillW = barH; // Ensure rounded ends
+        
+        tft.fillRoundRect(barX, barY, fillW, barH, barH/2, MD3_PRIMARY);
+        
+        // Progress text
         tft.setTextSize(1);
-        tft.setTextColor(TFT_LIGHTGREY);
-        tft.drawCentreString("ELAPSED", 82, 75, 1);
-        tft.drawCentreString("ETA", 237, 75, 1);
+        tft.setTextColor(MD3_BG); // Dark text on light bar
+        tft.drawCentreString(String(printerStatus.progress) + "%", barX + (barW/2), barY + 4, 1);
+        
+        lastProgress = printerStatus.progress;
     }
-    tft.setTextSize(3);
-    tft.setTextColor(TFT_WHITE);
-    int e_hours = printerStatus.print_duration / 3600;
-    int e_mins = (printerStatus.print_duration % 3600) / 60;
-    char e_buf[16];
-    snprintf(e_buf, sizeof(e_buf), "%d:%02d", e_hours, e_mins);
-    tft.drawCentreString(e_buf, 82, 100, 1);
-    int eta_hours = printerStatus.estimated_time / 3600;
-    int eta_mins = (printerStatus.estimated_time % 3600) / 60;
-    char eta_buf[16];
-    if (printerStatus.estimated_time > 0) {
-        snprintf(eta_buf, sizeof(eta_buf), "%d:%02d", eta_hours, eta_mins);
-    } else {
-        snprintf(eta_buf, sizeof(eta_buf), "--:--");
-    }
-    tft.drawCentreString(eta_buf, 237, 100, 1);
-    tft.setTextSize(2);
-    tft.setTextColor(TFT_GREEN);
-    tft.drawCentreString(String(printerStatus.progress) + "%", 160, 165, 1);
-    int barW = 280;
-    int barH = 20;
-    int barX = 20;
-    int barY = 195;
-    tft.drawRect(barX, barY, barW, barH, TFT_DARKGREY);
-    if (printerStatus.progress > 0) {
-        int fillW = (printerStatus.progress * (barW - 4)) / 100;
-        tft.fillRect(barX + 2, barY + 2, fillW, barH - 4, TFT_BLUE);
+
+    // Update time and file info
+    if (printerStatus.print_duration != lastPrintDuration) {
+        tft.setTextSize(1);
+        tft.setTextColor(MD3_TEXT_SEC, MD3_CARD);
+        tft.setTextPadding(260);
+
+        int e_hours = printerStatus.print_duration / 3600;
+        int e_mins = (printerStatus.print_duration % 3600) / 60;
+        int eta_hours = printerStatus.estimated_time / 3600;
+        int eta_mins = (printerStatus.estimated_time % 3600) / 60;
+
+        char buf[64];
+        snprintf(buf, sizeof(buf), "Elapsed: %d:%02d  |  ETA: %d:%02d", e_hours, e_mins, eta_hours, eta_mins);
+        tft.drawCentreString(buf, 160, 192, 1);
+
+        String title = printerStatus.file_name;
+        if (title.length() > 30) title = title.substring(0, 27) + "...";
+        tft.drawCentreString(title, 160, 210, 1);
+        
+        tft.setTextPadding(0);
+        lastPrintDuration = printerStatus.print_duration;
     }
 }
 
 void drawStatePaused(bool fullRedraw) {
     if (fullRedraw) {
-        tft.fillScreen(TFT_BLACK);
-        drawThinkingFace(160, 80, 2);
-        tft.setTextSize(2);
-        tft.setTextColor(TFT_ORANGE);
-        tft.drawCentreString("Print Paused", 160, 160, 1);
+        tft.fillScreen(MD3_BG);
+        drawThinkingFace(160, 80, 1);
+        
+        // Progress bar background (Pill shape)
+        int barX = 20, barY = 150, barW = 280, barH = 24;
+        tft.fillRoundRect(barX, barY, barW, barH, barH/2, MD3_CARD);
+        
+        // Bottom info card
+        tft.fillRoundRect(20, 185, 280, 45, 12, MD3_CARD);
+        
+        lastProgress = -1;
+        lastPrintDuration = 0xFFFFFFFF;
     }
     
-    tft.setTextSize(1);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.setTextPadding(200);
-    tft.drawCentreString(String(printerStatus.progress) + "% complete", 160, 185, 1);
-    tft.setTextPadding(0);
+    // Update progress bar (Amber/Orange for paused)
+    if (printerStatus.progress != lastProgress) {
+        int barX = 20, barY = 150, barW = 280, barH = 24;
+        int fillW = (printerStatus.progress * barW) / 100;
+        if (fillW < barH) fillW = barH;
+        
+        tft.fillRoundRect(barX, barY, fillW, barH, barH/2, 0xFD20); // Amber/Orange
+        
+        tft.setTextSize(1);
+        tft.setTextColor(MD3_BG);
+        tft.drawCentreString(String(printerStatus.progress) + "% (Paused)", barX + (barW/2), barY + 4, 1);
+        
+        lastProgress = printerStatus.progress;
+    }
+
+    if (printerStatus.print_duration != lastPrintDuration) {
+        tft.setTextSize(1);
+        tft.setTextColor(MD3_TEXT_SEC, MD3_CARD);
+        tft.setTextPadding(260);
+        tft.drawCentreString("Print status: PAUSED", 160, 192, 1);
+        
+        String title = printerStatus.file_name;
+        if (title.length() > 30) title = title.substring(0, 27) + "...";
+        tft.drawCentreString(title, 160, 210, 1);
+        
+        tft.setTextPadding(0);
+        lastPrintDuration = printerStatus.print_duration;
+    }
 }
 
 void drawStateError(bool fullRedraw) {
     if (fullRedraw) {
-        tft.fillScreen(TFT_BLACK);
-        drawCryingFace(160, 80, 2);
-        tft.setTextSize(3);
-        tft.setTextColor(TFT_RED);
-        tft.drawCentreString("Check the printer!", 160, 180, 1);
+        tft.fillScreen(MD3_BG);
+        drawCryingFace(160, 80, 1);
+        
+        // Large Error Card (Red background in MD3)
+        int rectX = 20, rectY = 150, rectW = 280, rectH = 70;
+        tft.fillRoundRect(rectX, rectY, rectW, rectH, 16, 0x9000); // Darker Red for MD3 context
+        
+        tft.setTextSize(2);
+        tft.setTextColor(0xFFFF); // White
+        tft.drawCentreString("CRITICAL ERROR", 160, rectY + 15, 1);
+        
+        tft.setTextSize(1);
+        tft.setTextColor(0xFD08); // Light red/pinkish
+        tft.drawCentreString("Check the printer hardware", 160, rectY + 45, 1);
     }
 }
 
