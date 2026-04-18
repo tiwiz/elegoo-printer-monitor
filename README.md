@@ -138,6 +138,12 @@ The CYD uses the following pins (built-in):
 | Touch IRQ | GPIO 36 |
 | Touch MISO | GPIO 39 |
 
+## Additional resources
+
+- [ESP32-Cheap-Yellow-Display](https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display)
+- [Elegoo Link protocol](https://github.com/elegoo/Elegoo-Link-Protocol)
+- [CYD Projects](https://github.com/bitbank2/CYD_Projects)
+
 ## License
 
 MIT License
