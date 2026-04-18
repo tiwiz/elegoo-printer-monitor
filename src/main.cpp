@@ -931,11 +931,6 @@ void setup() {
     
     pinMode(17, OUTPUT);
     digitalWrite(17, HIGH);
-    
-    // CYD Hardware Fixes
-    ledcSetup(0, 4000, 8);
-    ledcAttachPin(1, 0);
-    ledcWrite(0, 0);
 
     // Explicitly power backlight on pin 21
     pinMode(21, OUTPUT);

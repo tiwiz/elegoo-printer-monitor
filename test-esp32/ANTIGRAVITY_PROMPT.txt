@@ -1,0 +1,32 @@
+PROMPT PER SVILUPPO ESP32 - PROTOCOLLO ELEGOO CENTAURI CARBON (CC)
+
+"Agisci come un esperto sviluppatore firmware ESP32. Il tuo obiettivo è scrivere uno sketch Arduino per ESP32 che si connetta e monitori una stampante 3D Elegoo Centauri Carbon tramite protocollo locale.
+
+Requisiti tecnici:
+1. LIBRERIE: Usa 'ArduinoJson' per il parsing e 'ESP32-Arduino-Websocket' (o simile) per la comunicazione.
+2. DISCOVERY: Implementa una scansione UDP sulla porta 3000 per trovare l'IP della stampante. La stampante risponde con un JSON che contiene 'MainboardIP'.
+3. CONNESSIONE: Connettiti all'URL 'ws://<IP_STAMPANTE>:3030/websocket'.
+4. LOGICA PROTOCOLLO (SDCP):
+   - Tutti i messaggi JSON devono avere un 'RequestID' univoco e un 'TimeStamp' in millisecondi.
+   - Per ottenere lo stato, invia ogni 2 secondi un JSON con Cmd: 0.
+   - Topic da usare nel JSON: 'sdcp/request/<MainboardID>'.
+5. ESTRAZIONE DATI: Dal JSON di risposta (Topic: 'sdcp/status/...'), estrai e stampa sulla Serial Monitor:
+   - Temperatura Nozzle ('TempOfNozzle')
+   - Temperatura Piatto ('TempOfHotbed')
+   - Percentuale di progresso ('PrintInfo.Progress')
+   - Stato corrente ('Status.CurrentStatus[0]') dove 0=Idle, 1=Stampa.
+6. GESTIONE ERRORI: Gestisci i tentativi di riconnessione automatica se il WebSocket cade.
+
+Esempio di comando Status da inviare:
+{
+  "Data": {
+    "Cmd": 0,
+    "Data": {},
+    "From": 1,
+    "MainboardID": "<ID_RILEVATO>",
+    "RequestID": "1000",
+    "TimeStamp": 123456789
+  }
+}
+
+Scrivi il codice in modo modulare, separando la gestione WiFi, il Discovery e il client WebSocket."
