@@ -38,6 +38,18 @@ WebServer server(80);
 DNSServer dnsServer;
 UUID uuid;
 
+// --- MOCK SETTINGS ---
+const bool MOCK_UI_MODE = true;
+const int MOCK_CURRENT_STATE = 0; // 0 = STATE_IDLE
+
+// --- MD3 COLORS (RGB565) ---
+#define MD3_BG 0x1042         // #121212
+#define MD3_CARD 0x18E3       // #1E1E1E
+#define MD3_TEXT 0xFFFF       // #FFFFFF
+#define MD3_TEXT_SEC 0xC658   // #CACACA
+#define MD3_PRIMARY 0xD5F9    // #D0BCFF
+#define MD3_ACCENT 0x3E68     // #38A169
+
 enum PrinterType {
     PRINTER_NEPTUNE4,
     PRINTER_NEPTUNE4PRO,
@@ -302,7 +314,9 @@ void drawSadFace(int cx, int cy, int scale) {
 
 void drawHappyFace(int cx, int cy, int scale) {
     drawBaseEyes(cx, cy, scale);
-    tft.drawArc(cx, cy - 10 * scale, 40 * scale, 32 * scale, 135, 225, TFT_GREEN, TFT_BLACK, true);
+    // Draw a smile arc (using two segments to safely bridge 0 degree, 300->360 and 0->60)
+    tft.drawArc(cx, cy - 5 * scale, 32 * scale, 24 * scale, 300, 360, MD3_ACCENT, MD3_BG, true);
+    tft.drawArc(cx, cy - 5 * scale, 32 * scale, 24 * scale, 0, 60, MD3_ACCENT, MD3_BG, true);
 }
 
 void drawCryingFace(int cx, int cy, int scale) {
@@ -370,41 +384,67 @@ void drawStateConnecting() {
     }
 }
 
-void drawStateIdle() {
-    tft.fillScreen(TFT_BLACK);
-    drawHappyFace(160, 80, 1);
-    bool showFahrenheit = (millis() / 5000) % 2 == 1;
-    tft.setTextSize(2);
-    tft.setTextColor(TFT_WHITE);
-    tft.fillRoundRect(30, 150, 260, 60, 10, 0x1a1a2e);
-    if (showFahrenheit) {
-        int bTempF = (int)(printerStatus.bed_temp * 9/5 + 32);
-        int bTargF = (int)(printerStatus.bed_target * 9/5 + 32);
-        int nTempF = (int)(printerStatus.nozzle_temp * 9/5 + 32);
-        int nTargF = (int)(printerStatus.nozzle_target * 9/5 + 32);
-        tft.drawString("BED: " + String(bTempF) + "/" + String(bTargF) + "F", 45, 170, 1);
-        tft.drawRightString("NOZ: " + String(nTempF) + "/" + String(nTargF) + "F", 275, 170, 1);
-    } else {
-        tft.drawString("BED: " + String((int)printerStatus.bed_temp) + "/" + String((int)printerStatus.bed_target) + "C", 45, 170, 1);
-        tft.drawRightString("NOZ: " + String((int)printerStatus.nozzle_temp) + "/" + String((int)printerStatus.nozzle_target) + "C", 275, 170, 1);
+static bool lastShowBed = false;
+static float lastTempC = -1;
+
+void drawStateIdle(bool fullRedraw) {
+    bool showBed = (millis() / 5000) % 2 == 0;
+    float currentTempC = showBed ? printerStatus.bed_temp : printerStatus.nozzle_temp;
+    
+    if (fullRedraw) {
+        tft.fillScreen(MD3_BG);
+        drawHappyFace(160, 80, 1);
+        
+        int rectX = 20, rectY = 150, rectW = 280, rectH = 70;
+        tft.fillRoundRect(rectX, rectY, rectW, rectH, 16, MD3_CARD);
+        
+        lastShowBed = !showBed; // force text update
+        lastTempC = -1;
+    }
+    
+    if (showBed != lastShowBed || currentTempC != lastTempC) {
+        lastShowBed = showBed;
+        lastTempC = currentTempC;
+        
+        int rectY = 150;
+        tft.setTextSize(2);
+        tft.setTextColor(MD3_TEXT, MD3_CARD);
+        tft.setTextPadding(260); // clear any previous text
+        
+        if (showBed) {
+            int tempC = (int)printerStatus.bed_temp;
+            int tempF = (int)(printerStatus.bed_temp * 9.0/5.0 + 32.0);
+            tft.drawCentreString("Bed Temperature", 160, rectY + 15, 1);
+            tft.setTextColor(MD3_TEXT_SEC, MD3_CARD);
+            tft.drawCentreString(String(tempC) + " C  /  " + String(tempF) + " F", 160, rectY + 40, 1);
+        } else {
+            int tempC = (int)printerStatus.nozzle_temp;
+            int tempF = (int)(printerStatus.nozzle_temp * 9.0/5.0 + 32.0);
+            tft.drawCentreString("Nozzle Temperature", 160, rectY + 15, 1);
+            tft.setTextColor(MD3_TEXT_SEC, MD3_CARD);
+            tft.drawCentreString(String(tempC) + " C  /  " + String(tempF) + " F", 160, rectY + 40, 1);
+        }
+        tft.setTextPadding(0);
     }
 }
 
-void drawStatePrinting() {
-    tft.fillScreen(TFT_BLACK);
-    tft.setTextSize(2);
-    tft.setTextColor(TFT_ORANGE);
-    String title = printerStatus.file_name.length() > 0 ? printerStatus.file_name : "Printing...";
-    if (title.length() > 18) {
-        title = title.substring(0, 15) + "...";
+void drawStatePrinting(bool fullRedraw) {
+    if (fullRedraw) {
+        tft.fillScreen(TFT_BLACK);
+        tft.setTextSize(2);
+        tft.setTextColor(TFT_ORANGE);
+        String title = printerStatus.file_name.length() > 0 ? printerStatus.file_name : "Printing...";
+        if (title.length() > 18) {
+            title = title.substring(0, 15) + "...";
+        }
+        tft.drawCentreString(title, 160, 15, 1);
+        tft.fillRoundRect(10, 60, 145, 80, 8, 0x1a1a2e);
+        tft.fillRoundRect(165, 60, 145, 80, 8, 0x1a1a2e);
+        tft.setTextSize(1);
+        tft.setTextColor(TFT_LIGHTGREY);
+        tft.drawCentreString("ELAPSED", 82, 75, 1);
+        tft.drawCentreString("ETA", 237, 75, 1);
     }
-    tft.drawCentreString(title, 160, 15, 1);
-    tft.fillRoundRect(10, 60, 145, 80, 8, 0x1a1a2e);
-    tft.fillRoundRect(165, 60, 145, 80, 8, 0x1a1a2e);
-    tft.setTextSize(1);
-    tft.setTextColor(TFT_LIGHTGREY);
-    tft.drawCentreString("ELAPSED", 82, 75, 1);
-    tft.drawCentreString("ETA", 237, 75, 1);
     tft.setTextSize(3);
     tft.setTextColor(TFT_WHITE);
     int e_hours = printerStatus.print_duration / 3600;
@@ -435,45 +475,60 @@ void drawStatePrinting() {
     }
 }
 
-void drawStatePaused() {
-    tft.fillScreen(TFT_BLACK);
-    drawThinkingFace(160, 80, 2);
-    tft.setTextSize(2);
-    tft.setTextColor(TFT_ORANGE);
-    tft.drawCentreString("Print Paused", 160, 160, 1);
+void drawStatePaused(bool fullRedraw) {
+    if (fullRedraw) {
+        tft.fillScreen(TFT_BLACK);
+        drawThinkingFace(160, 80, 2);
+        tft.setTextSize(2);
+        tft.setTextColor(TFT_ORANGE);
+        tft.drawCentreString("Print Paused", 160, 160, 1);
+    }
+    
     tft.setTextSize(1);
-    tft.setTextColor(TFT_WHITE);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.setTextPadding(200);
     tft.drawCentreString(String(printerStatus.progress) + "% complete", 160, 185, 1);
+    tft.setTextPadding(0);
 }
 
-void drawStateError() {
-    tft.fillScreen(TFT_BLACK);
-    drawCryingFace(160, 80, 2);
-    tft.setTextSize(3);
-    tft.setTextColor(TFT_RED);
-    tft.drawCentreString("Check the printer!", 160, 180, 1);
+void drawStateError(bool fullRedraw) {
+    if (fullRedraw) {
+        tft.fillScreen(TFT_BLACK);
+        drawCryingFace(160, 80, 2);
+        tft.setTextSize(3);
+        tft.setTextColor(TFT_RED);
+        tft.drawCentreString("Check the printer!", 160, 180, 1);
+    }
 }
+
+static PrinterState lastStateDrawn = (PrinterState)-1;
 
 void drawCurrentState() {
+    bool forceFullRedraw = false;
+    if (lastStateDrawn != printerStatus.state) {
+        forceFullRedraw = true;
+        lastStateDrawn = printerStatus.state;
+    }
+
     switch (printerStatus.state) {
         case STATE_OFFLINE:
-            drawStateOffline();
+            if (forceFullRedraw) drawStateOffline();
             break;
         case STATE_CONNECTING:
-            drawStateConnecting();
+            if (forceFullRedraw) drawStateConnecting();
             break;
         case STATE_IDLE:
         case STATE_PREHEATING:
-            drawStateIdle();
+            drawStateIdle(forceFullRedraw);
             break;
         case STATE_PRINTING:
-            drawStatePrinting();
+            drawStatePrinting(forceFullRedraw);
             break;
         case STATE_PAUSED:
-            drawStatePaused();
+            drawStatePaused(forceFullRedraw);
             break;
         case STATE_ERROR:
-            drawStateError();
+            drawStateError(forceFullRedraw);
             break;
     }
 }
@@ -940,11 +995,24 @@ void setup() {
 
     tft.init();
     tft.setRotation(1);
-    tft.fillScreen(TFT_BLACK);
-    tft.setTextColor(TFT_WHITE);
+    tft.fillScreen(MD3_BG);
+    tft.setTextColor(MD3_TEXT);
     tft.setTextSize(2);
     tft.drawCentreString("Elegoo Monitor", 160, 100, 1);
     delay(1000);
+
+    if (MOCK_UI_MODE) {
+        currentState = UI_MONITOR;
+        printerStatus.state = (PrinterState)MOCK_CURRENT_STATE;
+        printerStatus.bed_temp = 23.0;
+        printerStatus.nozzle_temp = 25.0;
+        printerStatus.progress = 42;
+        printerStatus.print_duration = 3600;
+        printerStatus.estimated_time = 7200;
+        printerStatus.file_name = "Calibration_Cube.gcode";
+        Serial.println("Skipping network/printer setup - MOCK_UI_MODE enabled");
+        return;
+    }
 
     if (loadConfigFromNVS(config)) {
         cachedStatus = printerStatus;
@@ -986,6 +1054,15 @@ void setup() {
 }
 
 void loop() {
+    if (MOCK_UI_MODE) {
+        if (millis() - lastUIDraw > 200) {
+            lastUIDraw = millis();
+            drawCurrentState();
+        }
+        delay(10);
+        return;
+    }
+
     if (currentState == UI_CONFIG) {
         dnsServer.processNextRequest();
         server.handleClient();
