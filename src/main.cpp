@@ -128,10 +128,358 @@ unsigned long lastCommandTime = 0;
 enum UIState {
     UI_CONFIG,
     UI_CONNECTING,
-    UI_MONITOR
+    UI_MONITOR,
+    UI_SETTINGS
 };
 
 UIState currentState = UI_CONFIG;
+bool forceConfigMode = false;
+
+const char SETTINGS_HTML[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Elegoo Monitor - Settings</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #121212;
+            --card: #1E1E1E;
+            --text: #FFFFFF;
+            --text-sec: #CACACA;
+            --primary: #D0BCFF;
+            --accent: #38A169;
+            --danger: #EF4444;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding-bottom: 80px;
+        }
+        .header {
+            background: var(--card);
+            padding: 20px;
+            text-align: center;
+            border-bottom: 1px solid #333;
+        }
+        .header h1 { font-size: 20px; font-weight: 500; }
+        .header .status { font-size: 12px; color: var(--text-sec); margin-top: 5px; }
+        .card {
+            background: var(--card);
+            margin: 16px;
+            border-radius: 12px;
+            padding: 20px;
+        }
+        .card h2 {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--primary);
+            margin-bottom: 16px;
+        }
+        label { display: block; color: var(--text-sec); font-size: 12px; margin-bottom: 6px; }
+        input {
+            width: 100%; padding: 12px;
+            background: var(--bg);
+            border: 1px solid #333;
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 14px;
+            margin-bottom: 12px;
+        }
+        input:focus { outline: none; border-color: var(--primary); }
+        button {
+            width: 100%; padding: 14px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 8px;
+        }
+        button.danger { background: var(--danger); }
+        button:disabled { opacity: 0.5; }
+        .btn-row { display: flex; gap: 10px; }
+        .btn-row button { flex: 1; }
+        .scan-list { max-height: 150px; overflow-y: auto; border: 1px solid #333; border-radius: 8px; margin-bottom: 10px; }
+        .scan-item {
+            padding: 12px;
+            border-bottom: 1px solid #333;
+            cursor: pointer;
+        }
+        .scan-item:hover { background: #252525; }
+        .scan-item.selected { background: var(--primary); color: var(--bg); }
+        .current-value { font-size: 14px; margin-bottom: 12px; color: var(--text); }
+        .current-value span { color: var(--primary); }
+        .message {
+            padding: 12px; border-radius: 8px; margin-top: 12px;
+            text-align: center; font-size: 13px; display: none;
+        }
+        .message.success { background: #065f46; color: #6ee7b7; }
+        .message.error { background: #7f1d1d; color: #fca5a5; }
+        
+        /* Bottom Navigation */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--card);
+            display: flex;
+            border-top: 1px solid #333;
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        .nav-item {
+            flex: 1;
+            padding: 16px;
+            text-align: center;
+            color: var(--text-sec);
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .nav-item.active { color: var(--primary); border-top: 2px solid var(--primary); }
+        .nav-icon { font-size: 24px; display: block; margin-bottom: 4px; }
+        
+        /* Sections */
+        .section { display: none; }
+        .section.active { display: block; }
+        
+        /* Desktop */
+        @media (min-width: 768px) {
+            body { padding: 20px; padding-bottom: 20px; }
+            .container {
+                max-width: 600px;
+                margin: 0 auto;
+            }
+            .bottom-nav {
+                position: static;
+                max-width: 600px;
+                margin: 0 auto;
+                border-radius: 12px;
+                margin-bottom: 20px;
+            }
+            .nav-item { border-top: none !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Elegoo Monitor Settings</h1>
+        <div class="status" id="status">Loading...</div>
+    </div>
+    
+    <div class="container">
+        <!-- WiFi Section -->
+        <div class="section active" id="section-wifi">
+            <div class="card">
+                <h2>WiFi Network</h2>
+                <div class="current-value">Current: <span id="currentSsid">-</span></div>
+                <label>Network Name (SSID)</label>
+                <input type="text" id="ssid" placeholder="Enter WiFi name">
+                <label>Password</label>
+                <input type="password" id="password" placeholder="Enter WiFi password">
+                <button onclick="saveWifi()" id="wifiBtn">Save WiFi</button>
+                <div class="message" id="wifiMsg"></div>
+            </div>
+        </div>
+        
+        <!-- Printer Section -->
+        <div class="section" id="section-printer">
+            <div class="card">
+                <h2>Printer Settings</h2>
+                <div class="current-value">Current: <span id="currentPrinter">-</span></div>
+                <div class="current-value">Port: <span id="currentPort">-</span></div>
+                
+                <button onclick="discoverPrinter()" id="discBtn">Discover Printers</button>
+                <div class="scan-list" id="printerList"></div>
+                
+                <label>Printer IP Address</label>
+                <input type="text" id="printerHost" placeholder="192.168.1.100">
+                <label>Printer Port</label>
+                <input type="number" id="printerPort" placeholder="3030" value="3030">
+                
+                <button onclick="savePrinter()" id="printerBtn">Save Printer</button>
+                <div class="message" id="printerMsg"></div>
+            </div>
+        </div>
+        
+        <!-- System Section -->
+        <div class="section" id="section-system">
+            <div class="card">
+                <h2>System</h2>
+                <div class="btn-row">
+                    <button class="danger" onclick="restartDevice()">Restart Device</button>
+                </div>
+                <div class="message" id="sysMsg"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Bottom Navigation -->
+    <div class="bottom-nav">
+        <div class="nav-item active" onclick="showSection('wifi')">
+            <span class="nav-icon">📶</span>
+            WiFi
+        </div>
+        <div class="nav-item" onclick="showSection('printer')">
+            <span class="nav-icon">🖨️</span>
+            Printer
+        </div>
+        <div class="nav-item" onclick="showSection('system')">
+            <span class="nav-icon">⚙️</span>
+            System
+        </div>
+    </div>
+    
+    <script>
+        let currentTab = 'wifi';
+        
+        function showSection(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            document.getElementById('section-' + tab).classList.add('active');
+            event.target.closest('.nav-item').classList.add('active');
+        }
+        
+        async function loadConfig() {
+            try {
+                const res = await fetch('/api/config');
+                const data = await res.json();
+                document.getElementById('currentSsid').textContent = data.wifi.ssid || 'Not configured';
+                document.getElementById('currentPrinter').textContent = data.printer.host || 'Not configured';
+                document.getElementById('currentPort').textContent = data.printer.port || '3030';
+                document.getElementById('printerHost').value = data.printer.host || '';
+                document.getElementById('printerPort').value = data.printer.port || 3030;
+                document.getElementById('status').textContent = 'Connected: ' + (data.wifi.ip || 'N/A');
+            } catch(e) {
+                document.getElementById('status').textContent = 'Error loading config';
+            }
+        }
+        
+        async function saveWifi() {
+            const btn = document.getElementById('wifiBtn');
+            const msg = document.getElementById('wifiMsg');
+            const ssid = document.getElementById('ssid').value.trim();
+            const password = document.getElementById('password').value;
+            
+            if (!ssid) { showMsg(msg, 'Please enter SSID', 'error'); return; }
+            
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
+            try {
+                const res = await fetch('/api/wifi', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ssid, password})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showMsg(msg, 'WiFi saved! Restarting...', 'success');
+                    setTimeout(() => window.location.reload(), 2000);
+                } else {
+                    showMsg(msg, data.error || 'Failed', 'error');
+                }
+            } catch(e) {
+                showMsg(msg, e.message, 'error');
+            }
+            btn.disabled = false;
+            btn.textContent = 'Save WiFi';
+        }
+        
+        async function discoverPrinter() {
+            const btn = document.getElementById('discBtn');
+            const list = document.getElementById('printerList');
+            btn.disabled = true;
+            btn.textContent = 'Scanning...';
+            list.innerHTML = '<div class="scan-item">Scanning network...</div>';
+            
+            try {
+                const res = await fetch('/api/discover');
+                const data = await res.json();
+                list.innerHTML = '';
+                if (data.printers && data.printers.length > 0) {
+                    data.printers.forEach((p, i) => {
+                        const div = document.createElement('div');
+                        div.className = 'scan-item';
+                        div.textContent = p.name + ' (' + p.ip + ')';
+                        div.onclick = () => {
+                            document.querySelectorAll('.scan-item').forEach(el => el.classList.remove('selected'));
+                            div.classList.add('selected');
+                            document.getElementById('printerHost').value = p.ip;
+                        };
+                        list.appendChild(div);
+                    });
+                } else {
+                    list.innerHTML = '<div class="scan-item">No printers found</div>';
+                }
+            } catch(e) {
+                list.innerHTML = '<div class="scan-item">Scan failed: ' + e.message + '</div>';
+            }
+            btn.disabled = false;
+            btn.textContent = 'Discover Printers';
+        }
+        
+        async function savePrinter() {
+            const btn = document.getElementById('printerBtn');
+            const msg = document.getElementById('printerMsg');
+            const host = document.getElementById('printerHost').value.trim();
+            const port = parseInt(document.getElementById('printerPort').value) || 3030;
+            
+            if (!host) { showMsg(msg, 'Please enter IP or discover printer', 'error'); return; }
+            
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
+            try {
+                const res = await fetch('/api/printer', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({host, port})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showMsg(msg, 'Printer saved!', 'success');
+                    loadConfig();
+                } else {
+                    showMsg(msg, data.error || 'Failed', 'error');
+                }
+            } catch(e) {
+                showMsg(msg, e.message, 'error');
+            }
+            btn.disabled = false;
+            btn.textContent = 'Save Printer';
+        }
+        
+        async function restartDevice() {
+            const btn = event.target;
+            btn.disabled = true;
+            btn.textContent = 'Restarting...';
+            try {
+                await fetch('/api/restart', {method: 'POST'});
+            } catch(e) {}
+            document.getElementById('sysMsg').textContent = 'Device restarting...';
+            document.getElementById('sysMsg').style.display = 'block';
+            document.getElementById('sysMsg').className = 'message success';
+        }
+        
+        function showMsg(el, text, type) {
+            el.textContent = text;
+            el.className = 'message ' + type;
+            el.style.display = 'block';
+            setTimeout(() => el.style.display = 'none', 3000);
+        }
+        
+        loadConfig();
+    </script>
+</body>
+</html>
+)rawliteral";
 
 const char INDEX_HTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
@@ -709,6 +1057,113 @@ void handleSave() {
     ESP.restart();
 }
 
+void handleSettingsRoot() {
+    server.send_P(200, "text/html", SETTINGS_HTML);
+}
+
+void handleApiConfig() {
+    String json = "{";
+    json += "\"wifi\":{\"ssid\":\"" + config.wifi_ssid + "\",\"ip\":\"" + (WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : "") + "\"},";
+    json += "\"printer\":{\"host\":\"" + config.printer_host + "\",\"port\":" + String(config.printer_port) + "}";
+    json += "}";
+    server.send(200, "application/json", json);
+}
+
+void handleApiWifi() {
+    if (!server.hasArg("plain")) {
+        server.send(400, "text/plain", "Bad Request");
+        return;
+    }
+
+    String body = server.arg("plain");
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, body);
+    if (error) {
+        server.send(400, "text/plain", "JSON Error");
+        return;
+    }
+
+    config.wifi_ssid = doc["ssid"].as<String>();
+    config.wifi_password = doc["password"].as<String>();
+    config.configured = true;
+    saveConfigToNVS(config);
+
+    server.send(200, "application/json", "{\"success\":true}");
+    delay(500);
+    ESP.restart();
+}
+
+void handleApiPrinter() {
+    if (!server.hasArg("plain")) {
+        server.send(400, "text/plain", "Bad Request");
+        return;
+    }
+
+    String body = server.arg("plain");
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, body);
+    if (error) {
+        server.send(400, "text/plain", "JSON Error");
+        return;
+    }
+
+    config.printer_host = doc["host"].as<String>();
+    config.printer_port = doc["port"].as<int>();
+    saveConfigToNVS(config);
+
+    server.send(200, "application/json", "{\"success\":true}");
+}
+
+void handleApiRestart() {
+    server.send(200, "application/json", "{\"success\":true}");
+    delay(500);
+    ESP.restart();
+}
+
+void handleApiDiscover() {
+    WiFiUDP udp;
+    udp.begin(0);
+    IPAddress broadcastIp(255, 255, 255, 255);
+    
+    String printers = "[";
+    unsigned long startTime = millis();
+    unsigned long lastBroadcast = 0;
+    int found = 0;
+    
+    while (millis() - startTime < 5000) {
+        if (millis() - lastBroadcast > 1500) {
+            lastBroadcast = millis();
+            udp.beginPacket(broadcastIp, SDCP_DISCOVERY_PORT);
+            udp.write((const uint8_t*)SDCP_DISCOVERY_MSG, strlen(SDCP_DISCOVERY_MSG));
+            udp.endPacket();
+        }
+        
+        int packetSize = udp.parsePacket();
+        if (packetSize) {
+            char buf[512];
+            int len = udp.read(buf, 511);
+            if (len > 0) {
+                buf[len] = 0;
+                JsonDocument doc;
+                DeserializationError error = deserializeJson(doc, buf);
+                if (!error) {
+                    String name = "Elegoo Printer";
+                    if (doc["Data"]["Attributes"]["Name"].is<const char*>()) {
+                        name = doc["Data"]["Attributes"]["Name"].as<String>();
+                    }
+                    if (found > 0) printers += ",";
+                    printers += "{\"name\":\"" + name + "\",\"ip\":\"" + udp.remoteIP().toString() + "\"}";
+                    found++;
+                }
+            }
+        }
+        delay(10);
+    }
+    printers += "]";
+    
+    server.send(200, "application/json", "{\"printers\":" + printers + "}");
+}
+
 void setupAP() {
     WiFi.mode(WIFI_AP);
     WiFi.softAPConfig(IPAddress(AP_IP), IPAddress(AP_IP), IPAddress(AP_SUBNET));
@@ -719,6 +1174,17 @@ void setupAP() {
     server.on("/", handleRoot);
     server.on("/scan", handleScan);
     server.on("/save", HTTP_POST, handleSave);
+    server.begin();
+}
+
+void setupSettingsMode() {
+    server.on("/", handleSettingsRoot);
+    server.on("/settings", handleSettingsRoot);
+    server.on("/api/config", handleApiConfig);
+    server.on("/api/wifi", HTTP_POST, handleApiWifi);
+    server.on("/api/printer", HTTP_POST, handleApiPrinter);
+    server.on("/api/restart", HTTP_POST, handleApiRestart);
+    server.on("/api/discover", handleApiDiscover);
     server.begin();
 }
 
@@ -1059,6 +1525,14 @@ void setup() {
     pinMode(21, OUTPUT);
     digitalWrite(21, HIGH);
 
+    // Check BOOT button (GPIO 0) for forced config mode
+    pinMode(0, INPUT_PULLUP);
+    delay(100);
+    if (digitalRead(0) == LOW) {
+        Serial.println("BOOT button pressed - entering settings mode");
+        forceConfigMode = true;
+    }
+
     nvs_flash_init();
 
     tft.init();
@@ -1118,6 +1592,8 @@ void setup() {
         tft.fillScreen(TFT_BLACK);
         drawConfigScreen();
         setupAP();
+    } else {
+        WiFi.mode(WIFI_STA);
     }
 }
 
@@ -1140,6 +1616,29 @@ void loop() {
         if (millis() - lastUIDraw > 1000) {
             lastUIDraw = millis();
             drawCurrentState();
+        }
+        
+        if (forceConfigMode) {
+            currentState = UI_SETTINGS;
+            tft.fillScreen(TFT_BLACK);
+            tft.setTextColor(TFT_WHITE);
+            tft.setTextSize(2);
+            tft.drawCentreString("Settings Mode", 160, 70, 1);
+            tft.setTextSize(1);
+            tft.setTextColor(TFT_LIGHTGREY);
+            tft.drawCentreString("http://" + WiFi.localIP().toString() + "/settings", 160, 100, 1);
+            tft.drawCentreString("Tap anywhere to exit", 160, 150, 1);
+            setupSettingsMode();
+            forceConfigMode = false;
+        }
+    } else if (currentState == UI_SETTINGS) {
+        server.handleClient();
+        
+        if (tft.getTouchX() > 0 || tft.getTouchY() > 0) {
+            currentState = UI_MONITOR;
+            server.stop();
+            WiFi.mode(WIFI_STA);
+            tft.fillScreen(TFT_BLACK);
         }
     }
 
