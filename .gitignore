@@ -27,3 +27,6 @@ env/
 
 # Git
 *.orig
+
+# Test folder
+test-esp32/
