@@ -93,6 +93,7 @@ struct PrinterStatus {
     int print_duration = 0;
     int current_layer = 0;
     int total_layers = 0;
+    String current_action = "Idle";
     String mainboard_id;
     String printer_name;
     unsigned long last_update = 0;
@@ -431,6 +432,7 @@ void drawStateIdle(bool fullRedraw) {
 
 static int lastProgress = -1;
 static unsigned long lastPrintDuration = 0xFFFFFFFF;
+static String lastAction = "";
 
 void drawStatePrinting(bool fullRedraw) {
     if (fullRedraw) {
@@ -438,7 +440,7 @@ void drawStatePrinting(bool fullRedraw) {
         drawHappyFace(160, 80, 1);
         
         // Progress bar background (Pill shape)
-        int barX = 20, barY = 150, barW = 280, barH = 24;
+        int barX = 15, barY = 150, barW = 220, barH = 24;
         tft.fillRoundRect(barX, barY, barW, barH, barH/2, MD3_CARD);
         
         // Bottom info card
@@ -446,20 +448,32 @@ void drawStatePrinting(bool fullRedraw) {
         
         lastProgress = -1;
         lastPrintDuration = 0xFFFFFFFF;
+        lastAction = "";
+    }
+
+    if (printerStatus.current_action != lastAction) {
+        tft.setTextSize(1);
+        tft.setTextColor(MD3_TEXT_SEC, MD3_BG);
+        tft.setTextPadding(280);
+        tft.drawCentreString(printerStatus.current_action, 160, 122, 1);
+        tft.setTextPadding(0);
+        lastAction = printerStatus.current_action;
     }
 
     // Update progress bar
     if (printerStatus.progress != lastProgress) {
-        int barX = 20, barY = 150, barW = 280, barH = 24;
+        int barX = 15, barY = 150, barW = 220, barH = 24;
         int fillW = (printerStatus.progress * barW) / 100;
         if (fillW < barH) fillW = barH; // Ensure rounded ends
         
         tft.fillRoundRect(barX, barY, fillW, barH, barH/2, MD3_PRIMARY);
         
-        // Progress text
-        tft.setTextSize(1);
-        tft.setTextColor(MD3_BG); // Dark text on light bar
-        tft.drawCentreString(String(printerStatus.progress) + "%", barX + (barW/2), barY + 4, 1);
+        // Progress text outside
+        tft.setTextSize(2);
+        tft.setTextColor(MD3_PRIMARY, MD3_BG); 
+        tft.setTextPadding(80); 
+        tft.drawRightString(String(printerStatus.progress) + "%", 310, barY + 4, 1);
+        tft.setTextPadding(0);
         
         lastProgress = printerStatus.progress;
     }
@@ -851,28 +865,29 @@ void parseSDCPStatus(const JsonObject& status) {
     
     JsonObject printInfo = status["PrintInfo"];
     if (!printInfo.isNull()) {
-        if (printInfo["Status"].is<int>()) {
+        if (printInfo.containsKey("Status")) {
             int printState = printInfo["Status"].as<int>();
-            switch (printState) {
-                case 0:
-                    printerStatus.state = STATE_IDLE;
-                    break;
-                case 5:
-                case 10:
-                    printerStatus.state = STATE_PAUSED;
-                    break;
-                case 8:
-                case 9:
-                    printerStatus.state = STATE_PREHEATING;
-                    break;
-                case 13:
-                    printerStatus.state = STATE_PRINTING;
-                    break;
-                case 20:
-                    printerStatus.state = STATE_PRINTING;
-                    break;
-                default:
-                    break;
+            
+            if (printState == 1 || printState == 16 || printState == 21) {
+                printerStatus.current_action = "Preparing";
+                printerStatus.state = STATE_PREHEATING;
+            } else if (printState == 13 || printState == 20) {
+                printerStatus.current_action = "Printing";
+                printerStatus.state = STATE_PRINTING;
+            } else if (printState == 9) {
+                printerStatus.current_action = "Print Complete";
+                printerStatus.state = STATE_IDLE;
+            } else if (printState == 0) {
+                printerStatus.current_action = "Idle";
+                printerStatus.state = STATE_IDLE;
+            } else if (printState == 5 || printState == 10) {
+                printerStatus.current_action = "Paused";
+                printerStatus.state = STATE_PAUSED;
+            } else if (printState == 8) {
+                printerStatus.current_action = "Preheating";
+                printerStatus.state = STATE_PREHEATING;
+            } else {
+                printerStatus.current_action = "Unknown (" + String(printState) + ")";
             }
         }
         
@@ -884,13 +899,14 @@ void parseSDCPStatus(const JsonObject& status) {
             printerStatus.file_name = printInfo["Filename"].as<String>();
         }
         
-        if (printInfo["CurrentTicks"].is<int>()) {
-            printerStatus.print_duration = printInfo["CurrentTicks"].as<int>();
+        if (printInfo.containsKey("CurrentTicks")) {
+            printerStatus.print_duration = printInfo["CurrentTicks"].as<long>();
         }
         
-        if (printInfo["TotalTicks"].is<int>()) {
-            int totalTicks = printInfo["TotalTicks"].as<int>();
+        if (printInfo.containsKey("TotalTicks")) {
+            long totalTicks = printInfo["TotalTicks"].as<long>();
             printerStatus.estimated_time = totalTicks - printerStatus.print_duration;
+            if (printerStatus.estimated_time < 0) printerStatus.estimated_time = 0;
         }
         
         if (printInfo["CurrentLayer"].is<int>()) {
