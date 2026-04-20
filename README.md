@@ -36,7 +36,7 @@ No wiring required - all components are built into the CYD!
    - **Password**: Enter your WiFi password
    - **Printer Type**: Select your Elegoo printer model
    - **Printer IP Address**: Enter your printer's IP address
-   - **Printer Port**: Leave as 8888 (default)
+   - **Printer Port**: Leave as 3030 (default SDCP WebSocket port)
 
 5. **Save configuration** - Click "Save & Connect"
 
@@ -76,7 +76,29 @@ pio device monitor
 
 ### Reconfiguring
 
-To reset and reconfigure the device:
+**Option A: Settings Portal (recommended)**
+
+1. Hold the BOOT button (GPIO 0) while powering on the device
+2. The display will show "Settings Mode" and IP address
+3. Open a browser on your phone or desktop and navigate to:
+   ```
+   http://<device-ip>/settings
+   ```
+4. Use the bottom navigation to switch between WiFi, Printer, and System tabs:
+   - **WiFi**: Change your WiFi network or password
+   - **Printer**: Discover printers on your network or enter IP manually
+   - **System**: Restart the device
+5. Tap anywhere on the screen to exit settings mode back to monitor
+
+**Option A (desktop/mobile):**
+
+1. While the device is in normal monitor mode, visit:
+   ```
+   http://<device-ip>/settings
+   ```
+2. Change WiFi or printer settings as needed
+
+**Option B: Full reset**
 
 1. Press and hold the BOOT button while powering on the device
 2. The device will enter configuration mode
@@ -116,9 +138,11 @@ Based on the Elegoo Link protocol:
 
 ## Protocol
 
-Uses the Elegoo Link protocol for communication via HTTP:
-- Status queries to `/api/v1/printer`
-- JSON response parsing
+Uses the SDCP (Smart Device Communication Protocol) for communication:
+- WebSocket connection to `ws://PRINTER_IP:3030/websocket`
+- UDP discovery on port 3000 with message `M99999`
+- Commands: Cmd 0 (status), Cmd 1 (attributes)
+- JSON over WebSocket for real-time updates
 
 ## Display Configuration
 
