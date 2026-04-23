@@ -1536,7 +1536,7 @@ void setup() {
     nvs_flash_init();
 
     tft.init();
-    tft.setRotation(1);
+    tft.setRotation(3);
     tft.fillScreen(MD3_BG);
     tft.setTextColor(MD3_TEXT);
     tft.setTextSize(2);
@@ -1634,7 +1634,8 @@ void loop() {
     } else if (currentState == UI_SETTINGS) {
         server.handleClient();
         
-        if (tft.getTouchX() > 0 || tft.getTouchY() > 0) {
+        uint16_t t_x = 0, t_y = 0;
+        if (tft.getTouch(&t_x, &t_y)) {
             currentState = UI_MONITOR;
             server.stop();
             WiFi.mode(WIFI_STA);
