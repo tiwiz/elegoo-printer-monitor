@@ -57,12 +57,23 @@ cd esp32-printer-monitor
 # Install dependencies and build
 pio run
 
+# Build release (optimized)
+pio run -e release
+
 # Upload to device (connect via USB)
 pio run --target upload
 
 # View serial output
 pio device monitor
 ```
+
+**GitHub Actions:**
+To build using GitHub Actions:
+1. Create a new release with a tag (e.g., `v1.0.0`)
+2. The action will automatically build both debug and release versions
+3. Download the firmware from the GitHub Release page
+
+The release binary is output to: `.pio/build/esp32dev/firmware.bin`
 
 **Or with VS Code:**
 1. Install PlatformIO extension
